@@ -80,7 +80,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.LISTEN_PORT || 3000;
 
 const clerkClient = createClerkClient({
   secretKey: process.env.CLERK_SECRET_KEY,
@@ -324,7 +324,6 @@ app.post("/signin", async (req, res) => {
     res.status(500).json({ error: "Signin failed" });
   }
 });
-app.listen(3000, () => console.log("Server running on 3000"));
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
