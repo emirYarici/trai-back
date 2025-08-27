@@ -219,6 +219,7 @@ ${rawText}`;
                 type: "ARRAY",
                 items: { type: "STRING" },
               },
+              isQuestionOcr: { type: "BOOLEAN" },
               note: { type: "STRING" },
             },
             required: ["corrected_text", "yks_topics"],
