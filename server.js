@@ -10,6 +10,7 @@ import { createClerkClient } from "@clerk/backend";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import multer from "multer";
 import path from "path";
+import { webcrypto } from "node:crypto"; // <-- Add this line
 import fs from "fs";
 import { fileURLToPath } from "url";
 // import admin from "./admin.js";
@@ -111,9 +112,10 @@ const validateSupabaseToken = async (req, res, next) => {
 
     // Attach the decoded user info to the request object
     req.user = payload;
+    console.log("authenticated");
     next(); // Token is valid, proceed to the route handler
   } catch (err) {
-    console.error("JWT Verification Error:", err.message);
+    console.error("JWT Verification Error:", err);
     return res
       .status(401)
       .json({ error: "Unauthorized: Invalid or expired token" });
@@ -123,7 +125,6 @@ const validateSupabaseToken = async (req, res, next) => {
 // Enhanced OCR endpoint with better error handling
 app.post("/ocr", validateSupabaseToken, (req, res) => {
   // admin.auth().verifyIdToken(req.headers.authorization);
-
   upload.single("image")(req, res, async (uploadErr) => {
     // ... (Your existing Multer error handling) ...
     if (uploadErr) {
