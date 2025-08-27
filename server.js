@@ -17,6 +17,10 @@ import { fileURLToPath } from "url";
 import { createClient } from "@supabase/supabase-js";
 // Supabase client (backend only)
 
+// Polyfill for Web Crypto API
+if (typeof globalThis.crypto === "undefined") {
+  globalThis.crypto = webcrypto;
+}
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
