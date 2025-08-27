@@ -12,7 +12,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
-import admin from "./admin.js";
+// import admin from "./admin.js";
 import { createClient } from "@supabase/supabase-js";
 // Supabase client (backend only)
 
@@ -91,9 +91,39 @@ console.log("Clerk client methods:", Object.keys(clerkClient));
 app.use(cors());
 app.use(bodyParser.json());
 
+// Middleware to validate Supabase JWT
+const validateSupabaseToken = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res
+      .status(401)
+      .json({ error: "Unauthorized: Missing or invalid token format" });
+  }
+
+  const token = authHeader.split(" ")[1];
+  const secret = new TextEncoder().encode(SUPABASE_JWT_SECRET);
+
+  try {
+    const { payload } = await jose.jwtVerify(token, secret, {
+      audience: "authenticated", // Standard audience for Supabase JWTs
+    });
+
+    // Attach the decoded user info to the request object
+    req.user = payload;
+    next(); // Token is valid, proceed to the route handler
+  } catch (err) {
+    console.error("JWT Verification Error:", err.message);
+    return res
+      .status(401)
+      .json({ error: "Unauthorized: Invalid or expired token" });
+  }
+};
+
 // Enhanced OCR endpoint with better error handling
-app.post("/ocr", (req, res) => {
-  admin.auth().verifyIdToken(req.headers.authorization);
+app.post("/ocr", validateSupabaseToken, (req, res) => {
+  // admin.auth().verifyIdToken(req.headers.authorization);
+
   upload.single("image")(req, res, async (uploadErr) => {
     // ... (Your existing Multer error handling) ...
     if (uploadErr) {
@@ -284,46 +314,46 @@ app.get("/", (req, res) => {
   });
 });
 
-app.post("/signin", async (req, res) => {
-  try {
-    const { idToken } = req.body;
-    if (!idToken) return res.status(400).json({ error: "Missing idToken" });
+// app.post("/signin", async (req, res) => {
+//   try {
+//     const { idToken } = req.body;
+//     if (!idToken) return res.status(400).json({ error: "Missing idToken" });
 
-    const decoded = await admin.auth().verifyIdToken(idToken);
-    const firebase_uid = decoded.uid;
-    const email = decoded.email ?? null;
-    const name = decoded.name ?? null;
+//     const decoded = await admin.auth().verifyIdToken(idToken);
+//     const firebase_uid = decoded.uid;
+//     const email = decoded.email ?? null;
+//     const name = decoded.name ?? null;
 
-    // Upsert user and get the UUID id
-    const { data: userData, error } = await supabase
-      .from("profiles")
-      .upsert({ firebase_uid, email, name }, { onConflict: "firebase_uid" })
-      .select("id") // Select the UUID id
-      .single();
+//     // Upsert user and get the UUID id
+//     const { data: userData, error } = await supabase
+//       .from("profiles")
+//       .upsert({ firebase_uid, email, name }, { onConflict: "firebase_uid" })
+//       .select("id") // Select the UUID id
+//       .single();
 
-    if (error) {
-      console.error("DB error:", error);
-      return res.status(500).json({ error: "Profile upsert failed" });
-    }
+//     if (error) {
+//       console.error("DB error:", error);
+//       return res.status(500).json({ error: "Profile upsert failed" });
+//     }
 
-    // Use the UUID as sub
-    const supabaseToken = await new jose.SignJWT({
-      role: "authenticated",
-      aud: "authenticated",
-      sub: userData.id, // Use the UUID from database
-      firebase_uid, // Keep as custom claim
-    })
-      .setProtectedHeader({ alg: "HS256" })
-      .setIssuedAt()
-      .setExpirationTime("1h")
-      .sign(new TextEncoder().encode(SUPABASE_JWT_SECRET));
+//     // Use the UUID as sub
+//     const supabaseToken = await new jose.SignJWT({
+//       role: "authenticated",
+//       aud: "authenticated",
+//       sub: userData.id, // Use the UUID from database
+//       firebase_uid, // Keep as custom claim
+//     })
+//       .setProtectedHeader({ alg: "HS256" })
+//       .setIssuedAt()
+//       .setExpirationTime("1h")
+//       .sign(new TextEncoder().encode(SUPABASE_JWT_SECRET));
 
-    res.json({ supabaseToken });
-  } catch (err) {
-    console.error("Backend error:", err);
-    res.status(500).json({ error: "Signin failed" });
-  }
-});
+//     res.json({ supabaseToken });
+//   } catch (err) {
+//     console.error("Backend error:", err);
+//     res.status(500).json({ error: "Signin failed" });
+//   }
+// });
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
