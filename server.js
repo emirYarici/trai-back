@@ -6,14 +6,12 @@ import express, { response } from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
 import Tesseract from "tesseract.js";
-import { createClerkClient } from "@clerk/backend";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import multer from "multer";
 import path from "path";
 import { webcrypto } from "node:crypto"; // <-- Add this line
 import fs from "fs";
 import { fileURLToPath } from "url";
-// import admin from "./admin.js";
 import { createClient } from "@supabase/supabase-js";
 // Supabase client (backend only)
 
@@ -87,12 +85,6 @@ const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 const app = express();
 const PORT = process.env.LISTEN_PORT || 3000;
 
-const clerkClient = createClerkClient({
-  secretKey: process.env.CLERK_SECRET_KEY,
-  publishableKey: process.env.CLERK_PUBLIC_KEY,
-});
-
-console.log("Clerk client methods:", Object.keys(clerkClient));
 app.use(cors());
 app.use(bodyParser.json());
 
@@ -126,11 +118,10 @@ const validateSupabaseToken = async (req, res, next) => {
   }
 };
 
-// Enhanced OCR endpoint with better error handling
 app.post("/ocr", validateSupabaseToken, (req, res) => {
-  // admin.auth().verifyIdToken(req.headers.authorization);
+  const askAI = req.query.askAI !== "false"; // defaults to true if not specified
+
   upload.single("image")(req, res, async (uploadErr) => {
-    // ... (Your existing Multer error handling) ...
     if (uploadErr) {
       console.error("❌ Multer error:", uploadErr.message);
       return res.status(400).json({
@@ -157,18 +148,12 @@ app.post("/ocr", validateSupabaseToken, (req, res) => {
         throw new Error("Uploaded file not found on server");
       }
 
-      // --- Streamlined Tesseract Initialization ---
       console.log("🔧 Initializing Tesseract worker for Turkish OCR...");
-
-      // Tesseract.js v5+ requires a specific language code.
-      // We will only try to initialize with 'tur' as that is the user's intent.
-      // The library will automatically download the language data if needed.
       worker = await Tesseract.createWorker("tur");
       console.log(
         "✅ Tesseract worker initialized with Turkish language model"
       );
 
-      // --- Tesseract Recognition ---
       console.log("🔍 Performing OCR on the image...");
       const result = await worker.recognize(filePath);
       const rawText = result.data.text.trim();
@@ -179,26 +164,36 @@ app.post("/ocr", validateSupabaseToken, (req, res) => {
 
       console.log("📄 OCR completed, text length:", rawText.length);
 
-      // --- Cleanup ---
+      // Cleanup
       await worker.terminate();
       worker = null;
       fs.unlinkSync(filePath);
       filePath = null;
 
-      // ... (Rest of your Gemini processing code) ...
-      if (rawText.length < 10) {
+      // If text is too short or AI processing is not requested
+      if (rawText.length < 10 || !askAI) {
         return res.json({
           ocr_result: {
             corrected_text: rawText,
             yks_topics: [],
-            note: "Text too short to categorize",
+            isQuestionOcr: false,
+            note: askAI
+              ? "Text too short to categorize"
+              : "AI processing skipped as requested",
           },
           raw_text: rawText,
+          success: true,
         });
       }
 
+      // Process with Gemini if askAI is true
       console.log("🤖 Processing with Gemini...");
-      const prompt = `OCR ile bir fotoğraftan aşağıdaki yks sorusunu çıkardım, ocr sisteminden kaynaklı Yazım ve mantık hatalarını gider, metni düzeltilmiş haliyle JSON çıktısının "corrected_text" alanına ekleyin. Ayrıca, sorunun ait olduğu YKS (Yükseköğretim Kurumları Sınavı) konularını "yks_topics" alanına listeyin (örneğin: "TYT-Biyologi-Bitkiler", "AYT-Kimya-Asitler-Bazlar"). Soru çözümünü kesinlikse vermeyin.
+      const startTime = Date.now();
+
+      const prompt = `Düzelt ve sınıflandır:
+1. OCR metnindeki yazım/mantık hatalarını düzelt
+2. YKS konularını belirle (örn: TYT-Biyoloji-Bitkiler)
+3. Çözüm verme
 
 Metin:
 ${rawText}`;
@@ -227,31 +222,34 @@ ${rawText}`;
         },
       };
 
-      // ... (Rest of your Gemini API call and response handling) ...
       console.log("📤 Sending request to Gemini API...");
       let geminiResponse;
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
         geminiResponse = await Promise.race([
           model.generateContent(payload),
           new Promise((_, reject) =>
             setTimeout(
-              () => reject(new Error("Gemini API timeout after 30 seconds")),
-              30000
+              () => reject(new Error("Gemini API timeout after 15 seconds")),
+              15000
             )
           ),
         ]);
         clearTimeout(timeoutId);
+
+        const processingTime = (Date.now() - startTime) / 1000;
+        console.log(
+          `⏱️ Gemini processing time: ${processingTime.toFixed(2)} seconds`
+        );
         console.log("📥 Received response from Gemini API");
       } catch (geminiError) {
-        // ... (Your existing Gemini error handling) ...
         console.error("❌ Gemini API Error:", geminiError);
-        console.log("⚠️ Returning OCR-only result due to Gemini failure");
         return res.json({
           ocr_result: {
             corrected_text: rawText,
             yks_topics: [],
+            isQuestionOcr: false,
             note: "AI processing unavailable - raw OCR result returned",
           },
           raw_text: rawText,
@@ -260,7 +258,6 @@ ${rawText}`;
         });
       }
 
-      // ... (Rest of your response parsing and final JSON response) ...
       let structuredData;
       try {
         const responseText =
@@ -274,6 +271,7 @@ ${rawText}`;
         structuredData = {
           corrected_text: rawText,
           yks_topics: [],
+          isQuestionOcr: false,
           note: "Failed to process with AI, returning raw OCR result",
         };
       }
@@ -285,7 +283,6 @@ ${rawText}`;
         success: true,
       });
     } catch (err) {
-      // ... (Your existing error cleanup and response) ...
       console.error("❌ OCR endpoint error:", err);
       if (worker) {
         try {
