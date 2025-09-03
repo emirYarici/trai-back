@@ -28,6 +28,17 @@ const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
 const __filename = fileURLToPath(import.meta.url);
 const currentDirname = path.dirname(__filename);
 
+async function initializeTesseractWorker() {
+  try {
+    console.log("🔧 Initializing global Tesseract worker for Turkish OCR...");
+    globalWorker = await Tesseract.createWorker("tur");
+    console.log("✅ Global Tesseract worker initialized successfully");
+  } catch (error) {
+    console.error("❌ Failed to initialize Tesseract worker:", error);
+    process.exit(1);
+  }
+}
+
 // --- Multer Configuration ---
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -358,12 +369,16 @@ app.get("/", (req, res) => {
 //   }
 // });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-  console.log(`📋 Available endpoints:`);
-  console.log(`   GET  /          - Server info`);
-  console.log(`   GET  /health    - Health check`);
-  console.log(`   POST /ocr       - OCR processing`);
-  console.log(`   POST /signup    - User signup`);
-  console.log(`   POST /signin    - User signin`);
+app.listen(PORT, () => {}); // Initialize worker before starting server
+initializeTesseractWorker().then(() => {
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
+    console.log(`📋 Available endpoints:`);
+    console.log(`   GET  /          - Server info`);
+    console.log(`   GET  /health    - Health check`);
+    console.log(`   POST /ocr       - OCR processing`);
+    console.log(`   POST /signup    - User signup`);
+    console.log(`   POST /signin    - User signin`);
+    // ...existing logging code...
+  });
 });
