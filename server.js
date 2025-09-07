@@ -27,7 +27,7 @@ const supabase = createClient(
 const SUPABASE_JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
 const __filename = fileURLToPath(import.meta.url);
 const currentDirname = path.dirname(__filename);
-
+let globalWorker = null;
 async function initializeTesseractWorker() {
   try {
     console.log("🔧 Initializing global Tesseract worker for Turkish OCR...");
@@ -159,14 +159,8 @@ app.post("/ocr", validateSupabaseToken, (req, res) => {
         throw new Error("Uploaded file not found on server");
       }
 
-      console.log("🔧 Initializing Tesseract worker for Turkish OCR...");
-      worker = await Tesseract.createWorker("tur");
-      console.log(
-        "✅ Tesseract worker initialized with Turkish language model"
-      );
-
       console.log("🔍 Performing OCR on the image...");
-      const result = await worker.recognize(filePath);
+      const result = await globalWorker.recognize(filePath);
       const rawText = result.data.text.trim();
 
       if (!rawText) {
@@ -176,8 +170,7 @@ app.post("/ocr", validateSupabaseToken, (req, res) => {
       console.log("📄 OCR completed, text length:", rawText.length);
 
       // Cleanup
-      await worker.terminate();
-      worker = null;
+      await globalWorker.terminate();
       fs.unlinkSync(filePath);
       filePath = null;
 
@@ -295,9 +288,9 @@ ${rawText}`;
       });
     } catch (err) {
       console.error("❌ OCR endpoint error:", err);
-      if (worker) {
+      if (globalWorker) {
         try {
-          await worker.terminate();
+          await globalWorker.terminate();
         } catch (workerErr) {
           console.error("❌ Error terminating worker:", workerErr);
         }
@@ -369,7 +362,6 @@ app.get("/", (req, res) => {
 //   }
 // });
 
-app.listen(PORT, () => {}); // Initialize worker before starting server
 initializeTesseractWorker().then(() => {
   app.listen(PORT, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
