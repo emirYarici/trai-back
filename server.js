@@ -180,7 +180,7 @@ app.post("/ocr", validateSupabaseToken, (req, res) => {
           ocr_result: {
             corrected_text: rawText,
             yks_topics: [],
-            isQuestionOcr: false,
+            isQuestionOcr: true,
             note: askAI
               ? "Text too short to categorize"
               : "AI processing skipped as requested",
