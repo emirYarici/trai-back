@@ -175,12 +175,12 @@ app.post("/ocr", validateSupabaseToken, (req, res) => {
       filePath = null;
 
       // If text is too short or AI processing is not requested
-      if (rawText.length < 10 || !askAI) {
+      if (rawText.length < 10) {
         return res.json({
           ocr_result: {
             corrected_text: rawText,
             yks_topics: [],
-            isQuestionOcr: true,
+            isQuestionOcr: false,
             note: askAI
               ? "Text too short to categorize"
               : "AI processing skipped as requested",
@@ -188,6 +188,60 @@ app.post("/ocr", validateSupabaseToken, (req, res) => {
           raw_text: rawText,
           success: true,
         });
+      } else if (askAI === false) {
+        console.log(
+          "🤖 Performing simple check with Gemini: Is this a YKS question?"
+        );
+        try {
+          const simplePrompt = `Bu metin bir YKS (Yükseköğretim Kurumları Sınavı) sorusu mu? Sadece JSON formatında ve 'is_yks_question' anahtarıyla boolean bir değer döndür. Metin: "${rawText}"`;
+
+          const simplePayload = {
+            contents: [{ parts: [{ text: simplePrompt }] }],
+            generationConfig: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: "OBJECT",
+                properties: {
+                  is_yks_question: { type: "BOOLEAN" },
+                },
+                required: ["is_yks_question"],
+              },
+            },
+          };
+
+          const geminiResult = await model.generateContent(simplePayload);
+          const responseText =
+            geminiResult.response.candidates[0].content.parts[0].text;
+          const simpleData = JSON.parse(responseText);
+
+          return res.json({
+            ocr_result: {
+              corrected_text: rawText,
+              yks_topics: [],
+              isQuestionOcr: simpleData.is_yks_question, // Use the result from Gemini
+              note: "AI processing was limited to question identification only.",
+            },
+            raw_text: rawText,
+            success: true,
+          });
+        } catch (simpleAiError) {
+          console.error(
+            "❌ Simple Gemini check failed:",
+            simpleAiError.message
+          );
+          // Fallback if the simple check fails
+          return res.json({
+            ocr_result: {
+              corrected_text: rawText,
+              yks_topics: [],
+              isQuestionOcr: false, // Default to false on error
+              note: "AI question identification failed. Raw OCR result returned.",
+            },
+            raw_text: rawText,
+            success: true,
+            warning: "AI question identification failed.",
+          });
+        }
       }
 
       // Process with Gemini if askAI is true
