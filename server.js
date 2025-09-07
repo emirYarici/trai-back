@@ -170,7 +170,7 @@ app.post("/ocr", validateSupabaseToken, (req, res) => {
       console.log("📄 OCR completed, text length:", rawText.length);
 
       // Cleanup
-      await globalWorker.terminate();
+      // await globalWorker.terminate();
       fs.unlinkSync(filePath);
       filePath = null;
 
